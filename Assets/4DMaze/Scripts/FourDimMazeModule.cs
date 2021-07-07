@@ -1,8 +1,11 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 public class FourDimMazeModule : MonoBehaviour {
 	public const float CUBE_OFFSET = 0.05f;
+	public const float BUTTONS_OFFSET = 0.02f;
 	public static readonly Vector4Int SIZE = new Vector4Int(5, 5, 5, 5);
 	public static Color[] COLORS { get { return new[] { Color.red, Color.green, Color.blue, Color.magenta, Color.yellow, Color.cyan }; } }
 
@@ -17,6 +20,9 @@ public class FourDimMazeModule : MonoBehaviour {
 
 	public KMRuleSeedable RuleSeedable;
 	public GameObject ViewContainer;
+	public GameObject ButtonsContainer;
+	public KMSelectable Selectable;
+	public ButtonComponent ButtonPrefab;
 	public WallComponent WallPrefab;
 
 	private int moduleId;
@@ -47,7 +53,10 @@ public class FourDimMazeModule : MonoBehaviour {
 				} else if (temp[adjPos] == 1) temp[adjPos] = 3;
 			}
 		}
-		walls = temp.Select((cell, pos) => cell == 2 || rnd.Next(0, 8) == 0 ? null as Color? : COLORS[rnd.Next(0, COLORS.Length)]);
+		temp.ForEach((value, pos) => {
+			if (value == 3 && rnd.Next(0, 8) == 0) temp[pos] = 2;
+		});
+		walls = temp.Select((cell, pos) => cell == 2 ? null as Color? : COLORS[rnd.Next(0, COLORS.Length)]);
 		int passedCells = 0;
 		walls.ForEach((cell, pos) => {
 			if (cell != null) return;
@@ -67,6 +76,16 @@ public class FourDimMazeModule : MonoBehaviour {
 		Debug.Log(walls[new Vector4Int(3, 0, 0, 0)]);
 		Debug.Log(walls[new Vector4Int(4, 0, 0, 0)]);
 		RenderWalls();
+		Selectable.Children = new[] {
+			CreateButton(Vector3.zero, "L", () => Turn(ref r, f, ref f, -r)),
+			CreateButton(Vector3.right, "R", () => Turn(ref r, -f, ref f, r)),
+			CreateButton(Vector3.back, "U", () => Turn(ref u, -f, ref f, u)),
+			CreateButton(Vector3.back * 2, "D", () => Turn(ref u, f, ref f, -u)),
+			CreateButton(Vector3.back + Vector3.right, "A", () => Turn(ref a, -f, ref f, a)),
+			CreateButton(Vector3.back * 2 + Vector3.right, "K", () => Turn(ref a, f, ref f, -a)),
+			CreateButton(Vector3.right / 2 + Vector3.back * 4, "F", () => MoveForward(), 2f),
+		}.Select(b => b.Selectable).ToArray();
+		Selectable.UpdateChildren();
 	}
 
 	private void RenderWalls() {
@@ -88,6 +107,18 @@ public class FourDimMazeModule : MonoBehaviour {
 		if (f != null) CreateWall(Vector3.zero, f.Value);
 	}
 
+	private ButtonComponent CreateButton(Vector3 pos, string label, Action action = null, float scale = 1f) {
+		ButtonComponent button = Instantiate(ButtonPrefab);
+		button.transform.parent = ButtonsContainer.transform;
+		button.transform.localPosition = pos * BUTTONS_OFFSET;
+		button.transform.localScale = Vector3.one * scale;
+		button.transform.localRotation = Quaternion.identity;
+		button.Selectable.Parent = Selectable;
+		button.text = label;
+		if (action != null) button.Selectable.OnInteract += () => { action(); return false; };
+		return button;
+	}
+
 	private void CreateWall(Vector3 pos, Color color) {
 		WallComponent wall = Instantiate(WallPrefab);
 		wall.transform.parent = ViewContainer.transform;
@@ -95,5 +126,18 @@ public class FourDimMazeModule : MonoBehaviour {
 		wall.transform.localScale = Vector3.one;
 		wall.transform.localRotation = Quaternion.identity;
 		wall.color = color;
+	}
+
+	private void MoveForward() {
+		Vector4Int newPos = pos.AddMod(f, SIZE);
+		if (walls[newPos] != null) return;
+		pos = newPos;
+		RenderWalls();
+	}
+
+	private void Turn(ref Vector4Int a, Vector4Int newA, ref Vector4Int b, Vector4Int newB) {
+		a = newA;
+		b = newB;
+		RenderWalls();
 	}
 }

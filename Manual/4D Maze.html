@@ -59,7 +59,15 @@
                 for (let y = 0; y < MAP_SIZE; y++) {
                     for (let z = 0; z < MAP_SIZE; z++) {
                         for (let w = 0; w < MAP_SIZE; w++) {
-                            if (maze[x][y][z][w] !== 2 && rnd.next(0, 8) === 0) maze[x][y][z][w] = 2;
+                            if (maze[x][y][z][w] === 3 && rnd.next(0, 8) === 0) maze[x][y][z][w] = 2;
+                        }
+                    }
+                }
+            }
+            for (let x = 0; x < MAP_SIZE; x++) {
+                for (let y = 0; y < MAP_SIZE; y++) {
+                    for (let z = 0; z < MAP_SIZE; z++) {
+                        for (let w = 0; w < MAP_SIZE; w++) {
                             maze[x][y][z][w] = maze[x][y][z][w] === 2 ? COLORS[0] : COLORS[rnd.next(1, COLORS.length)];
                         }
                     }
