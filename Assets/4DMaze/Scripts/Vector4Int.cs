@@ -23,6 +23,14 @@
 		return new Vector4Int(a.x * b, a.y * b, a.z * b, a.w * b);
 	}
 
+	public static bool operator ==(Vector4Int a, Vector4Int b) {
+		return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
+	}
+
+	public static bool operator !=(Vector4Int a, Vector4Int b) {
+		return !(a == b);
+	}
+
 	public Vector4Int(int x, int y, int z, int w) {
 		this.x = x;
 		this.y = y;
@@ -41,5 +49,13 @@
 
 	private static int NumMod(int a, int _base) {
 		return a < 0 ? _base + a % _base : a % _base;
+	}
+
+	public override bool Equals(object obj) {
+		return base.Equals(obj);
+	}
+
+	public override int GetHashCode() {
+		return base.GetHashCode();
 	}
 }

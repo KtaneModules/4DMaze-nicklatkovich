@@ -1,10 +1,12 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
 public class FourDimMazeModule : MonoBehaviour {
-	public const float CUBE_OFFSET = 0.05f;
+	public const int MAX_TARGET_DISTANCE = 8;
+	public const float CUBE_OFFSET = 0.04f;
 	public const float BUTTONS_OFFSET = 0.02f;
 	public static readonly Vector4Int SIZE = new Vector4Int(5, 5, 5, 5);
 	public static Color[] COLORS { get { return new[] { Color.red, Color.green, Color.blue, Color.magenta, Color.yellow, Color.cyan }; } }
@@ -21,16 +23,22 @@ public class FourDimMazeModule : MonoBehaviour {
 	public KMRuleSeedable RuleSeedable;
 	public GameObject ViewContainer;
 	public GameObject ButtonsContainer;
+	public TextMesh TargetText;
 	public KMSelectable Selectable;
+	public KMSelectable SubmitButton;
+	public KMBombModule BombModule;
 	public ButtonComponent ButtonPrefab;
 	public WallComponent WallPrefab;
 
+	private bool activated = false;
+	private bool solved = false;
 	private int moduleId;
 	private Vector4Int pos;
 	private Vector4Int f;
 	private Vector4Int r;
 	private Vector4Int u;
 	private Vector4Int a;
+	private Vector4Int target;
 	private FourDimArray<Color?> walls;
 
 	private void Start() {
@@ -84,8 +92,50 @@ public class FourDimMazeModule : MonoBehaviour {
 			CreateButton(Vector3.back + Vector3.right, "A", () => Turn(ref a, -f, ref f, a)),
 			CreateButton(Vector3.back * 2 + Vector3.right, "K", () => Turn(ref a, f, ref f, -a)),
 			CreateButton(Vector3.right / 2 + Vector3.back * 4, "F", () => MoveForward(), 2f),
-		}.Select(b => b.Selectable).ToArray();
+		}.Select(b => b.Selectable).Concat(new[] { SubmitButton }).ToArray();
 		Selectable.UpdateChildren();
+		BombModule.OnActivate += Activate;
+	}
+
+	private void Activate() {
+		FourDimArray<int> steps = new FourDimArray<int>(SIZE, int.MaxValue);
+		steps[pos] = 0;
+		Queue<Vector4Int> q = new Queue<Vector4Int>();
+		q.Enqueue(pos);
+		target = pos;
+		int exactStepsCount = 1;
+		int distance = 0;
+		while (q.Count > 0) {
+			Vector4Int pos = q.Dequeue();
+			int newSteps = steps[pos] + 1;
+			if (newSteps > MAX_TARGET_DISTANCE) break;
+			foreach (Vector4Int dd in DIRECTIONS) {
+				Vector4Int adjPos = pos.AddMod(dd, SIZE);
+				if (walls[adjPos] != null) continue;
+				if (steps[adjPos] <= newSteps) continue;
+				steps[adjPos] = newSteps;
+				q.Enqueue(adjPos);
+				if (distance == newSteps) {
+					if (Random.Range(0, exactStepsCount) == 0) target = adjPos;
+					exactStepsCount++;
+				} else if (distance < newSteps) {
+					distance = newSteps;
+					exactStepsCount = 1;
+					target = adjPos;
+				}
+			}
+		}
+		TargetText.text = (target + Vector4Int.one).ToString();
+		SubmitButton.OnInteract += () => { Submit(); return false; };
+		Debug.Log(walls[target]);
+		activated = true;
+	}
+
+	private void Submit() {
+		if (pos == target) {
+			solved = true;
+			BombModule.HandlePass();
+		} else BombModule.HandleStrike();
 	}
 
 	private void RenderWalls() {
@@ -96,13 +146,13 @@ public class FourDimMazeModule : MonoBehaviour {
 		Color? l = walls[pos.AddMod(-this.r, SIZE)];
 		if (l != null) CreateWall(Vector3.left, l.Value);
 		Color? u = walls[pos.AddMod(this.u, SIZE)];
-		if (u != null) CreateWall(Vector3.up, u.Value);
+		if (u != null) CreateWall(Vector3.forward, u.Value);
 		Color? d = walls[pos.AddMod(-this.u, SIZE)];
-		if (d != null) CreateWall(Vector3.down, d.Value);
+		if (d != null) CreateWall(Vector3.back, d.Value);
 		Color? a = walls[pos.AddMod(this.a, SIZE)];
-		if (a != null) CreateWall(Vector3.forward, a.Value);
+		if (a != null) CreateWall(Vector3.up, a.Value);
 		Color? k = walls[pos.AddMod(-this.a, SIZE)];
-		if (k != null) CreateWall(Vector3.back, k.Value);
+		if (k != null) CreateWall(Vector3.down, k.Value);
 		Color? f = walls[pos.AddMod(this.f, SIZE)];
 		if (f != null) CreateWall(Vector3.zero, f.Value);
 	}
@@ -129,6 +179,7 @@ public class FourDimMazeModule : MonoBehaviour {
 	}
 
 	private void MoveForward() {
+		if (!activated || solved) return;
 		Vector4Int newPos = pos.AddMod(f, SIZE);
 		if (walls[newPos] != null) return;
 		pos = newPos;
@@ -136,6 +187,7 @@ public class FourDimMazeModule : MonoBehaviour {
 	}
 
 	private void Turn(ref Vector4Int a, Vector4Int newA, ref Vector4Int b, Vector4Int newB) {
+		if (!activated || solved) return;
 		a = newA;
 		b = newB;
 		RenderWalls();

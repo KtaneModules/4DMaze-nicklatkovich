@@ -75,10 +75,10 @@
             }
             const mapTable = document.getElementById("map");
             while (mapTable.children.length > 3) mapTable.removeChild(mapTable.lastChild);
-            for (let y = 0; y < MAP_SIZE; y++) {
-                for (let z = 0; z < MAP_SIZE; z++) {
+            for (let y = MAP_SIZE - 1; y >= 0; y--) {
+                for (let z = MAP_SIZE - 1; z >= 0; z--) {
                     const row = mapTable.appendChild(document.createElement("tr"));
-                    if (z === 0) {
+                    if (z === MAP_SIZE - 1) {
                         const yCoord = row.appendChild(document.createElement("td"));
                         yCoord.innerText = y + 1;
                         yCoord.rowSpan = 5;
@@ -91,8 +91,8 @@
                             const cell = row.appendChild(document.createElement("td"));
                             cell.style.backgroundColor = maze[x][y][z][w];
                             const border = "16px solid white";
-                            if (z === 0) cell.style.borderTop = border;
-                            if (z === MAP_SIZE - 1) cell.style.borderBottom = border;
+                            if (z === MAP_SIZE - 1) cell.style.borderTop = border;
+                            if (z === 0) cell.style.borderBottom = border;
                             if (x === 0) cell.style.borderLeft = border;
                             if (x === MAP_SIZE - 1) cell.style.borderRight = border;
                         }
