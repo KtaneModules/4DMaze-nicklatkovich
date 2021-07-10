@@ -38,9 +38,11 @@ public class FourDimMazeModule : MonoBehaviour {
 	public KMSelectable Selectable;
 	public KMSelectable SubmitButton;
 	public KMBombModule BombModule;
+	public ModeTogglerComponent ModeToggleButton;
 	public ButtonComponent ButtonPrefab;
 	public HyperCube HyperCubePrefab;
 
+	private bool advancedMode = true;
 	private bool activated = false;
 	private bool solved = false;
 	private int moduleId;
@@ -119,7 +121,7 @@ public class FourDimMazeModule : MonoBehaviour {
 			CreateButton(Vector3.back + Vector3.right, "A", () => queue.Enqueue(TurnDirection.ANA)),
 			CreateButton(Vector3.back * 2 + Vector3.right, "K", () => queue.Enqueue(TurnDirection.KATA)),
 			CreateButton(Vector3.right / 2 + Vector3.back * 4, "F", () => queue.Enqueue(null), 2f),
-		}.Select(b => b.Selectable).Concat(new[] { SubmitButton }).ToArray();
+		}.Select(b => b.Selectable).Concat(new[] { SubmitButton, ModeToggleButton.Selectable }).ToArray();
 		Selectable.UpdateChildren();
 		BombModule.OnActivate += Activate;
 	}
@@ -176,6 +178,14 @@ public class FourDimMazeModule : MonoBehaviour {
 		TargetText.text = (target + Vector4Int.one).ToString();
 		Debug.LogFormat("[4D Maze #{0}] Target position: {1}", moduleId, (target + Vector4Int.one).ToString());
 		SubmitButton.OnInteract += () => { Submit(); return false; };
+		ModeToggleButton.Selectable.OnInteract += () => {
+			advancedMode = !advancedMode;
+			ModeToggleButton.advanced = advancedMode;
+			if (advancedMode) AddWalls();
+			else RemoveWalls();
+			RenderWalls();
+			return false;
+		};
 		AddWalls();
 		activated = true;
 	}
@@ -191,9 +201,9 @@ public class FourDimMazeModule : MonoBehaviour {
 		foreach (Vector4Int id in GetPositionsToRender()) {
 			if (hypercubes.ContainsKey(id)) {
 				HyperCube oldHypercube = hypercubes[id];
-				bool wasDestroying = oldHypercube.destroy;
-				oldHypercube.destroy = false;
-				if (wasDestroying) oldHypercube.renderedCubes = new HashSet<Vector4Int>();
+				// bool wasDestroying = oldHypercube.destroy;
+				// oldHypercube.destroy = false;
+				// if (wasDestroying) oldHypercube.renderedCubes = new HashSet<Vector4Int>();
 				foreach (Vector4Int dir in DIRECTIONS) if (walls[id.AddMod(dir, SIZE)] == null) oldHypercube.renderedCubes.Add(dir);
 				continue;
 			}
@@ -217,8 +227,9 @@ public class FourDimMazeModule : MonoBehaviour {
 
 	private HashSet<Vector4Int> GetPositionsToRender(Vector4Int pos, Vector4Int r, Vector4Int u, Vector4Int a, Vector4Int f) {
 		HashSet<Vector4Int> positionsToRender = new HashSet<Vector4Int>(new[] { r, u, a }.SelectMany(d => new[] { pos + d, pos - d }));
+		positionsToRender.Add(pos + f);
+		if (!advancedMode) return positionsToRender;
 		if (walls[pos.AddMod(f, SIZE)] == null) positionsToRender = new HashSet<Vector4Int>(positionsToRender.SelectMany(p => new[] { p, p + f }));
-		else positionsToRender.Add(pos + f);
 		Dictionary<Vector4Int, Vector4Int[]> perpendiculars = new Dictionary<Vector4Int, Vector4Int[]>{
 			{ r, new[] { u, a, f, -u, -a } },
 			{ u, new[] { r, a, f, -r, -a } },
@@ -237,17 +248,21 @@ public class FourDimMazeModule : MonoBehaviour {
 
 	private void RemoveWalls() {
 		HashSet<Vector4Int> positionsToRender = GetPositionsToRender();
-		foreach (Vector4Int idToRemove in hypercubes.Keys.Where((k) => !positionsToRender.Contains(k)).ToArray()) hypercubes[idToRemove].destroy = true;
+		// foreach (Vector4Int idToRemove in hypercubes.Keys.Where((k) => !positionsToRender.Contains(k)).ToArray()) hypercubes[idToRemove].destroy = true;
+		foreach (Vector4Int idToRemove in hypercubes.Keys.Where((k) => !positionsToRender.Contains(k)).ToArray()) {
+			Destroy(hypercubes[idToRemove].gameObject);
+			hypercubes.Remove(idToRemove);
+		}
+		foreach (Vector4Int id in hypercubes.Keys) {
+			HyperCube hypercube = hypercubes[id];
+			hypercube.renderedCubes = new HashSet<Vector4Int>();
+			foreach (Vector4Int dir in DIRECTIONS) if (walls[id.AddMod(dir, SIZE)] == null) hypercube.renderedCubes.Add(dir);
+		}
 	}
 
 	private void RenderWalls() {
 		foreach (Vector4Int id in hypercubes.Keys.ToArray()) {
 			HyperCube hypercube = hypercubes[id];
-			if (hypercube.destroy && hypercube.distructionAnim <= 0f) {
-				Destroy(hypercube.gameObject);
-				hypercubes.Remove(id);
-				continue;
-			}
 			hypercube.Render(Lerp(pos, toPos, anim), new FourDimRotation(LerpNorm(r, toR, anim), LerpNorm(u, toU, anim), LerpNorm(f, toF, anim), LerpNorm(a, toA, anim)));
 		}
 	}

@@ -1,7 +1,7 @@
 ﻿using UnityEngine;
 
 public class NodeComponent : MonoBehaviour {
-	private float RETINA = 70f;
+	private float RETINA = 60f;
 
 	public Renderer Renderer;
 
@@ -11,9 +11,10 @@ public class NodeComponent : MonoBehaviour {
 	private Color _color;
 	public Color color { get { return _color; } set { _color = value; UpdateColor(); } }
 
-	public float distructionAnim = 1f;
+	// public float distructionAnim = 1f;
 
 	private float initialTime;
+	private float radius = 0;
 
 	private void Start() {
 		initialTime = Time.time;
@@ -26,13 +27,15 @@ public class NodeComponent : MonoBehaviour {
 		}
 		Vector4 relativePos = pos - observer;
 		float dist = relativePos.magnitude;
-		float radius = 1f;
-		if (dist > 1.5f) radius = 0f;
-		else if (dist > 1f) radius = (1.5f - dist) / .5f;
+		float targetRadius = 1f;
+		if (dist > 1.5f) targetRadius = 0f;
+		else if (dist > 1f) targetRadius = (1.5f - dist) / .5f;
 		Vector4 projDepth = Vector4.Project(relativePos, lookRotation.Front);
 		float dDepth = (projDepth + lookRotation.Front).magnitude - 1;
-		if (dDepth < .5f) radius = Mathf.Max(0, dDepth * 2f);
-		radius *= Mathf.Min(1f, Time.time - initialTime, distructionAnim);
+		if (dDepth < .5f) targetRadius = Mathf.Max(0, dDepth * 2f);
+		targetRadius *= Mathf.Min(1f, Time.time - initialTime);
+		if (targetRadius > radius) radius = Mathf.Min(targetRadius, radius + Time.deltaTime);
+		else radius = targetRadius;
 		transform.localScale = Vector3.one * .2f * radius;
 		float angleX = Project(relativePos, lookRotation.Right, lookRotation.Front) / RETINA;
 		float angleY = Project(relativePos, lookRotation.Ana, lookRotation.Front) / RETINA;
