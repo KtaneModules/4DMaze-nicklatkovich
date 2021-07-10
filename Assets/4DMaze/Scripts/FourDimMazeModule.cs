@@ -63,6 +63,7 @@ public class FourDimMazeModule : MonoBehaviour {
 	private void Start() {
 		moduleId = moduleIdCounter++;
 		MonoRandom rnd = RuleSeedable.GetRNG();
+		Debug.LogFormat("[4D Maze #{0}] Map seed: {1}", moduleId, rnd.Seed);
 		FourDimArray<int> temp = new FourDimArray<int>(SIZE, 0);
 		Vector4Int generationStartPos = new Vector4Int(rnd.Next(0, SIZE.x), rnd.Next(0, SIZE.y), rnd.Next(0, SIZE.z), rnd.Next(0, SIZE.w));
 		temp[generationStartPos] = 1;
@@ -90,16 +91,26 @@ public class FourDimMazeModule : MonoBehaviour {
 			if (Random.Range(0, passedCells++) == 0) this.pos = pos;
 		});
 		Debug.LogFormat("[4D Maze #{0}] Initial position: {1}", moduleId, (pos + Vector4Int.one).ToString());
-		r = AXIS[0];
-		u = AXIS[1];
-		a = AXIS[2];
-		f = AXIS[3];
 		toPos = pos;
-		toR = r;
-		toU = u;
-		toA = a;
-		toF = f;
-		Debug.LogFormat("[4D Maze #{0}] Initial view direction: {1}", moduleId, "(" + new[]{ r, u, a, f }.Select(a => DIRECTIONS_NAMES[a]).Join(";") + ")");
+		toR = r = AXIS[0];
+		toU = u = AXIS[1];
+		toA = a = AXIS[2];
+		toF = f = AXIS[3];
+		List<TurnDirection> turns = new List<TurnDirection>();
+		foreach (int i in Enumerable.Range(0, 3)) turns.Add(TurnDirection.RIGHT);
+		foreach (int i in Enumerable.Range(0, 3)) turns.Add(TurnDirection.UP);
+		foreach (int i in Enumerable.Range(0, 3)) turns.Add(TurnDirection.DOWN);
+		foreach (int i in Enumerable.Range(0, 3)) turns.Add(TurnDirection.ANA);
+		turns.Shuffle();
+		foreach (TurnDirection turn in turns) {
+			Turn(turn);
+			r = toR;
+			u = toU;
+			a = toA;
+			f = toF;
+		}
+		anim = 1f;
+		Debug.LogFormat("[4D Maze #{0}] Initial orientation: {1}", moduleId, "(" + new[]{ r, u, a, f }.Select(a => DIRECTIONS_NAMES[a]).Join(";") + ")");
 		Selectable.Children = new[] {
 			CreateButton(Vector3.zero, "L", () => queue.Enqueue(TurnDirection.LEFT)),
 			CreateButton(Vector3.right, "R", () => queue.Enqueue(TurnDirection.RIGHT)),
@@ -117,7 +128,7 @@ public class FourDimMazeModule : MonoBehaviour {
 		if (!activated) return;
 		if (anim < 1f) anim = Mathf.Min(1f, anim + Time.deltaTime * (1 + queue.Count));
 		else {
-			if (pos != toPos) Debug.LogFormat("[4D Maze #{0}] Moved to: {1}", moduleId, (toPos + Vector4Int.one).ToString());
+			if (pos != toPos) Debug.LogFormat("[4D Maze #{0}] Moved to: {1}", moduleId, (toPos.AddMod(Vector4Int.zero, SIZE) + Vector4Int.one).ToString());
 			pos = toPos;
 			r = toR;
 			u = toU;
@@ -163,13 +174,14 @@ public class FourDimMazeModule : MonoBehaviour {
 			}
 		}
 		TargetText.text = (target + Vector4Int.one).ToString();
+		Debug.LogFormat("[4D Maze #{0}] Target position: {1}", moduleId, (target + Vector4Int.one).ToString());
 		SubmitButton.OnInteract += () => { Submit(); return false; };
 		AddWalls();
 		activated = true;
 	}
 
 	private void Submit() {
-		if (pos == target) {
+		if (pos.AddMod(Vector4Int.zero, SIZE) == target) {
 			solved = true;
 			BombModule.HandlePass();
 		} else BombModule.HandleStrike();

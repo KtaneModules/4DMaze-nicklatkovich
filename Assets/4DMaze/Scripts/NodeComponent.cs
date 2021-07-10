@@ -31,7 +31,7 @@ public class NodeComponent : MonoBehaviour {
 		else if (dist > 1f) radius = (1.5f - dist) / .5f;
 		Vector4 projDepth = Vector4.Project(relativePos, lookRotation.Front);
 		float dDepth = (projDepth + lookRotation.Front).magnitude - 1;
-		if (dDepth < 0) radius = 0f;
+		if (dDepth < .5f) radius = Mathf.Max(0, dDepth * 2f);
 		radius *= Mathf.Min(1f, Time.time - initialTime, distructionAnim);
 		transform.localScale = Vector3.one * .2f * radius;
 		float angleX = Project(relativePos, lookRotation.Right, lookRotation.Front) / RETINA;
