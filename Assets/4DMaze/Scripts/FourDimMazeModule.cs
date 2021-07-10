@@ -18,6 +18,8 @@ public class FourDimMazeModule : MonoBehaviour {
 	public static Vector4Int[] DIRECTIONS { get { return AXIS.SelectMany(axis => new[] { axis, axis * -1 }).ToArray(); } }
 	public readonly string[] DIRECTIONS_NAMES = new[] { "+X", "-X", "+Y", "-Y", "+Z", "-Z", "+W", "-W" };
 
+	public enum TurnDirection { RIGHT, LEFT, UP, DOWN, ANA, KATA };
+
 	private static int moduleIdCounter = 1;
 
 	public KMRuleSeedable RuleSeedable;
@@ -28,7 +30,7 @@ public class FourDimMazeModule : MonoBehaviour {
 	public KMSelectable SubmitButton;
 	public KMBombModule BombModule;
 	public ButtonComponent ButtonPrefab;
-	public WallComponent WallPrefab;
+	public HyperCube HyperCubePrefab;
 
 	private bool activated = false;
 	private bool solved = false;
@@ -40,6 +42,7 @@ public class FourDimMazeModule : MonoBehaviour {
 	private Vector4Int a;
 	private Vector4Int target;
 	private FourDimArray<Color?> walls;
+	private Dictionary<Vector4Int, HyperCube> hypercubes = new Dictionary<Vector4Int, HyperCube>();
 
 	private void Start() {
 		moduleId = moduleIdCounter++;
@@ -78,23 +81,21 @@ public class FourDimMazeModule : MonoBehaviour {
 		a = AXIS[2];
 		f = AXIS[3];
 		Debug.LogFormat("[4D Maze #{0}] Initial view direction: {1}", moduleId, "(" + axis.Select(a => DIRECTIONS_NAMES[a]).Join(";") + ")");
-		Debug.Log(walls[new Vector4Int(0, 0, 0, 0)]);
-		Debug.Log(walls[new Vector4Int(1, 0, 0, 0)]);
-		Debug.Log(walls[new Vector4Int(2, 0, 0, 0)]);
-		Debug.Log(walls[new Vector4Int(3, 0, 0, 0)]);
-		Debug.Log(walls[new Vector4Int(4, 0, 0, 0)]);
-		RenderWalls();
 		Selectable.Children = new[] {
-			CreateButton(Vector3.zero, "L", () => Turn(ref r, f, ref f, -r)),
-			CreateButton(Vector3.right, "R", () => Turn(ref r, -f, ref f, r)),
-			CreateButton(Vector3.back, "U", () => Turn(ref u, -f, ref f, u)),
-			CreateButton(Vector3.back * 2, "D", () => Turn(ref u, f, ref f, -u)),
-			CreateButton(Vector3.back + Vector3.right, "A", () => Turn(ref a, -f, ref f, a)),
-			CreateButton(Vector3.back * 2 + Vector3.right, "K", () => Turn(ref a, f, ref f, -a)),
+			CreateButton(Vector3.zero, "L", () => Turn(TurnDirection.LEFT)),
+			CreateButton(Vector3.right, "R", () => Turn(TurnDirection.RIGHT)),
+			CreateButton(Vector3.back, "U", () => Turn(TurnDirection.UP)),
+			CreateButton(Vector3.back * 2, "D", () => Turn(TurnDirection.DOWN)),
+			CreateButton(Vector3.back + Vector3.right, "A", () => Turn(TurnDirection.ANA)),
+			CreateButton(Vector3.back * 2 + Vector3.right, "K", () => Turn(TurnDirection.KATA)),
 			CreateButton(Vector3.right / 2 + Vector3.back * 4, "F", () => MoveForward(), 2f),
 		}.Select(b => b.Selectable).Concat(new[] { SubmitButton }).ToArray();
 		Selectable.UpdateChildren();
 		BombModule.OnActivate += Activate;
+	}
+
+	private void Update() {
+		if (activated) RenderWalls();
 	}
 
 	private void Activate() {
@@ -127,7 +128,7 @@ public class FourDimMazeModule : MonoBehaviour {
 		}
 		TargetText.text = (target + Vector4Int.one).ToString();
 		SubmitButton.OnInteract += () => { Submit(); return false; };
-		Debug.Log(walls[target]);
+		RenderWalls();
 		activated = true;
 	}
 
@@ -139,22 +140,30 @@ public class FourDimMazeModule : MonoBehaviour {
 	}
 
 	private void RenderWalls() {
-		int childs = ViewContainer.transform.childCount;
-		for (int i = childs - 1; i >= 0; i--) Destroy(ViewContainer.transform.GetChild(i).gameObject);
-		Color? r = walls[pos.AddMod(this.r, SIZE)];
-		if (r != null) CreateWall(Vector3.right, r.Value);
-		Color? l = walls[pos.AddMod(-this.r, SIZE)];
-		if (l != null) CreateWall(Vector3.left, l.Value);
-		Color? u = walls[pos.AddMod(this.u, SIZE)];
-		if (u != null) CreateWall(Vector3.forward, u.Value);
-		Color? d = walls[pos.AddMod(-this.u, SIZE)];
-		if (d != null) CreateWall(Vector3.back, d.Value);
-		Color? a = walls[pos.AddMod(this.a, SIZE)];
-		if (a != null) CreateWall(Vector3.up, a.Value);
-		Color? k = walls[pos.AddMod(-this.a, SIZE)];
-		if (k != null) CreateWall(Vector3.down, k.Value);
-		Color? f = walls[pos.AddMod(this.f, SIZE)];
-		if (f != null) CreateWall(Vector3.zero, f.Value);
+		HashSet<Vector4Int> positionsToRender = new HashSet<Vector4Int>(new[] { r, u, a }.SelectMany(d => new[] { pos + d, pos - d }));
+		if (walls[pos.AddMod(f, SIZE)] == null) positionsToRender = new HashSet<Vector4Int>(positionsToRender.SelectMany(p => new[] { p, p + f }));
+		positionsToRender.Add(pos + f);
+		foreach (Vector4Int idToRemove in hypercubes.Keys.Where((k) => !positionsToRender.Contains(k)).ToArray()) {
+			Destroy(hypercubes[idToRemove].gameObject);
+			hypercubes.Remove(idToRemove);
+		}
+		foreach (Vector4Int id in positionsToRender) {
+			if (hypercubes.ContainsKey(id)) continue;
+			Color? color = walls[id.AddMod(Vector4Int.zero, SIZE)];
+			if (color == null) continue;
+			HyperCube hypercube = Instantiate(HyperCubePrefab);
+			hypercube.transform.parent = ViewContainer.transform;
+			hypercube.transform.localPosition = Vector3.zero;
+			hypercube.transform.localScale = Vector3.one;
+			hypercube.transform.localRotation = Quaternion.identity;
+			hypercube.pos = new Vector4(id.x, id.y, id.z, id.w);
+			hypercube.color = color.Value;
+			foreach (Vector4Int dir in DIRECTIONS) if (walls[id.AddMod(dir, SIZE)] == null) hypercube.renderedCubes.Add(dir);
+			hypercubes[id] = hypercube;
+		}
+		foreach (HyperCube hypercube in hypercubes.Values) {
+			hypercube.Render(ToVector4(pos), new FourDimRotation(ToVector4(r), ToVector4(u), ToVector4(f), ToVector4(a)));
+		}
 	}
 
 	private ButtonComponent CreateButton(Vector3 pos, string label, Action action = null, float scale = 1f) {
@@ -169,15 +178,6 @@ public class FourDimMazeModule : MonoBehaviour {
 		return button;
 	}
 
-	private void CreateWall(Vector3 pos, Color color) {
-		WallComponent wall = Instantiate(WallPrefab);
-		wall.transform.parent = ViewContainer.transform;
-		wall.transform.localPosition = pos * CUBE_OFFSET;
-		wall.transform.localScale = Vector3.one;
-		wall.transform.localRotation = Quaternion.identity;
-		wall.color = color;
-	}
-
 	private void MoveForward() {
 		if (!activated || solved) return;
 		Vector4Int newPos = pos.AddMod(f, SIZE);
@@ -186,10 +186,26 @@ public class FourDimMazeModule : MonoBehaviour {
 		RenderWalls();
 	}
 
+	private void Turn(TurnDirection dir) {
+		switch (dir) {
+			case TurnDirection.LEFT: Turn(ref r, f, ref f, -r); break;
+			case TurnDirection.RIGHT: Turn(ref r, -f, ref f, r); break;
+			case TurnDirection.UP: Turn(ref u, -f, ref f, u); break;
+			case TurnDirection.DOWN: Turn(ref u, f, ref f, -u); break;
+			case TurnDirection.ANA: Turn(ref a, -f, ref f, a); break;
+			case TurnDirection.KATA: Turn(ref a, f, ref f, -a); break;
+			default: throw new NotImplementedException();
+		}
+	}
+
 	private void Turn(ref Vector4Int a, Vector4Int newA, ref Vector4Int b, Vector4Int newB) {
 		if (!activated || solved) return;
 		a = newA;
 		b = newB;
 		RenderWalls();
+	}
+
+	private static Vector4 ToVector4(Vector4Int v) {
+		return new Vector4(v.x, v.y, v.z, v.w);
 	}
 }
