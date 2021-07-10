@@ -19,7 +19,7 @@ public class EdgeComponent : MonoBehaviour {
 		transform.localPosition = (Node1.transform.localPosition + Node2.transform.localPosition) / 2f;
 		Vector3 diff = Node2.transform.localPosition - Node1.transform.localPosition;
 		float radius = 0.9f * Mathf.Max(Vector3MaxDim(Node1.transform.localScale), Vector3MaxDim(Node2.transform.localScale));
-		if (radius < RADIUS_THRESHOLD) {
+		if (radius < RADIUS_THRESHOLD || diff.magnitude < RADIUS_THRESHOLD) {
 			transform.localScale = Vector3.zero;
 			return;
 		}

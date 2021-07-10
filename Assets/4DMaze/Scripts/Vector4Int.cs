@@ -1,4 +1,6 @@
-﻿public struct Vector4Int {
+﻿using UnityEngine;
+
+public struct Vector4Int {
 	public static readonly Vector4Int zero = new Vector4Int(0, 0, 0, 0);
 	public static readonly Vector4Int one = new Vector4Int(1, 1, 1, 1);
 	public static readonly Vector4Int right = new Vector4Int(1, 0, 0, 0);
@@ -8,12 +10,16 @@
 	public static readonly Vector4Int front = new Vector4Int(0, 0, 1, 0);
 	public static readonly Vector4Int back = new Vector4Int(0, 0, -1, 0);
 	public static readonly Vector4Int ana = new Vector4Int(0, 0, 0, 1);
-	public static readonly Vector4Int kata = new Vector4Int(0, 0, 0, 1);
+	public static readonly Vector4Int kata = new Vector4Int(0, 0, 0, -1);
 
 	public int x;
 	public int y;
 	public int z;
 	public int w;
+
+	public static explicit operator Vector4(Vector4Int a) {
+		return new Vector4(a.x, a.y, a.z, a.w);
+	}
 
 	public static Vector4Int operator -(Vector4Int a) {
 		return a * -1;
@@ -33,6 +39,10 @@
 
 	public static Vector4Int operator *(Vector4Int a, int b) {
 		return new Vector4Int(a.x * b, a.y * b, a.z * b, a.w * b);
+	}
+
+	public static Vector4 operator *(Vector4Int a, float b) {
+		return ((Vector4)a) * b;
 	}
 
 	public static bool operator ==(Vector4Int a, Vector4Int b) {
@@ -60,7 +70,7 @@
 	}
 
 	private static int NumMod(int a, int _base) {
-		return a < 0 ? _base + a % _base : a % _base;
+		return a < 0 ? (_base + a % _base) % _base : a % _base;
 	}
 
 	public override bool Equals(object obj) {

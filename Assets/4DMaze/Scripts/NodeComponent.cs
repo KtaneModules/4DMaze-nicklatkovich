@@ -11,6 +11,14 @@ public class NodeComponent : MonoBehaviour {
 	private Color _color;
 	public Color color { get { return _color; } set { _color = value; UpdateColor(); } }
 
+	public float distructionAnim = 1f;
+
+	private float initialTime;
+
+	private void Start() {
+		initialTime = Time.time;
+	}
+
 	public void Render(Vector4 observer, FourDimRotation lookRotation) {
 		if (!Visible) {
 			gameObject.SetActive(false);
@@ -19,11 +27,12 @@ public class NodeComponent : MonoBehaviour {
 		Vector4 relativePos = pos - observer;
 		float dist = relativePos.magnitude;
 		float radius = 1f;
-		if (dist > 1.73f) radius = 0f;
-		else if (dist > 1f) radius = (dist - 1f) / .73f;
+		if (dist > 1.5f) radius = 0f;
+		else if (dist > 1f) radius = (1.5f - dist) / .5f;
 		Vector4 projDepth = Vector4.Project(relativePos, lookRotation.Front);
 		float dDepth = (projDepth + lookRotation.Front).magnitude - 1;
 		if (dDepth < 0) radius = 0f;
+		radius *= Mathf.Min(1f, Time.time - initialTime, distructionAnim);
 		transform.localScale = Vector3.one * .2f * radius;
 		float angleX = Project(relativePos, lookRotation.Right, lookRotation.Front) / RETINA;
 		float angleY = Project(relativePos, lookRotation.Ana, lookRotation.Front) / RETINA;

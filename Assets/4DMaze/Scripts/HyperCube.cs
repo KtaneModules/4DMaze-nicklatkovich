@@ -10,6 +10,8 @@ public class HyperCube : MonoBehaviour {
 
 	public HashSet<Vector4Int> renderedCubes = new HashSet<Vector4Int>();
 	public Vector4Int id;
+	public bool destroy = false;
+	public float distructionAnim = 1f;
 
 	private Vector4 _pos;
 	public Vector4 pos { get { return _pos; } set { _pos = value; if (_nodes == null) Start(); else UpdateNodesPositions(); } }
@@ -35,6 +37,12 @@ public class HyperCube : MonoBehaviour {
 		for (int i = 0; i < 16; i += 8) for (int j = 0; j < 4; j++) _edges.Add(CreateEdge(i + j, i + j + 4));
 		for (int i = 0; i < 8; i++) _edges.Add(CreateEdge(i, i + 8));
 		UpdateNodesPositions();
+	}
+
+	private void Update() {
+		if (destroy) distructionAnim = Mathf.Max(0, distructionAnim - Time.deltaTime);
+		else distructionAnim = Mathf.Min(1, distructionAnim + Time.deltaTime);
+		foreach (NodeComponent node in _nodes) node.distructionAnim = distructionAnim;
 	}
 
 	private EdgeComponent CreateEdge(int from, int to) {

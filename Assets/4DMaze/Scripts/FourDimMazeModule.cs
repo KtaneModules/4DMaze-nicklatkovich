@@ -16,7 +16,16 @@ public class FourDimMazeModule : MonoBehaviour {
 	}
 
 	public static Vector4Int[] DIRECTIONS { get { return AXIS.SelectMany(axis => new[] { axis, axis * -1 }).ToArray(); } }
-	public readonly string[] DIRECTIONS_NAMES = new[] { "+X", "-X", "+Y", "-Y", "+Z", "-Z", "+W", "-W" };
+	public readonly Dictionary<Vector4Int, string> DIRECTIONS_NAMES = new Dictionary<Vector4Int, string>() {
+		{ Vector4Int.right, "+X" },
+		{ Vector4Int.left, "-X" },
+		{ Vector4Int.up, "+Y" },
+		{ Vector4Int.down, "-Y" },
+		{ Vector4Int.front, "+Z" },
+		{ Vector4Int.back, "-Z" },
+		{ Vector4Int.ana, "+W" },
+		{ Vector4Int.kata, "-W" },
+	};
 
 	public enum TurnDirection { RIGHT, LEFT, UP, DOWN, ANA, KATA };
 
@@ -35,14 +44,21 @@ public class FourDimMazeModule : MonoBehaviour {
 	private bool activated = false;
 	private bool solved = false;
 	private int moduleId;
+	private float anim = 1f;
 	private Vector4Int pos;
 	private Vector4Int f;
 	private Vector4Int r;
 	private Vector4Int u;
 	private Vector4Int a;
+	private Vector4Int toPos;
+	private Vector4Int toF;
+	private Vector4Int toR;
+	private Vector4Int toU;
+	private Vector4Int toA;
 	private Vector4Int target;
 	private FourDimArray<Color?> walls;
 	private Dictionary<Vector4Int, HyperCube> hypercubes = new Dictionary<Vector4Int, HyperCube>();
+	private Queue<TurnDirection?> queue = new Queue<TurnDirection?>();
 
 	private void Start() {
 		moduleId = moduleIdCounter++;
@@ -74,28 +90,48 @@ public class FourDimMazeModule : MonoBehaviour {
 			if (Random.Range(0, passedCells++) == 0) this.pos = pos;
 		});
 		Debug.LogFormat("[4D Maze #{0}] Initial position: {1}", moduleId, (pos + Vector4Int.one).ToString());
-		int[] axis = Enumerable.Range(0, 4).Select(a => a * 2 + (Random.Range(0, 2) == 0 ? 0 : 1)).ToArray();
-		axis = axis.Shuffle();
 		r = AXIS[0];
 		u = AXIS[1];
 		a = AXIS[2];
 		f = AXIS[3];
-		Debug.LogFormat("[4D Maze #{0}] Initial view direction: {1}", moduleId, "(" + axis.Select(a => DIRECTIONS_NAMES[a]).Join(";") + ")");
+		toPos = pos;
+		toR = r;
+		toU = u;
+		toA = a;
+		toF = f;
+		Debug.LogFormat("[4D Maze #{0}] Initial view direction: {1}", moduleId, "(" + new[]{ r, u, a, f }.Select(a => DIRECTIONS_NAMES[a]).Join(";") + ")");
 		Selectable.Children = new[] {
-			CreateButton(Vector3.zero, "L", () => Turn(TurnDirection.LEFT)),
-			CreateButton(Vector3.right, "R", () => Turn(TurnDirection.RIGHT)),
-			CreateButton(Vector3.back, "U", () => Turn(TurnDirection.UP)),
-			CreateButton(Vector3.back * 2, "D", () => Turn(TurnDirection.DOWN)),
-			CreateButton(Vector3.back + Vector3.right, "A", () => Turn(TurnDirection.ANA)),
-			CreateButton(Vector3.back * 2 + Vector3.right, "K", () => Turn(TurnDirection.KATA)),
-			CreateButton(Vector3.right / 2 + Vector3.back * 4, "F", () => MoveForward(), 2f),
+			CreateButton(Vector3.zero, "L", () => queue.Enqueue(TurnDirection.LEFT)),
+			CreateButton(Vector3.right, "R", () => queue.Enqueue(TurnDirection.RIGHT)),
+			CreateButton(Vector3.back, "U", () => queue.Enqueue(TurnDirection.UP)),
+			CreateButton(Vector3.back * 2, "D", () => queue.Enqueue(TurnDirection.DOWN)),
+			CreateButton(Vector3.back + Vector3.right, "A", () => queue.Enqueue(TurnDirection.ANA)),
+			CreateButton(Vector3.back * 2 + Vector3.right, "K", () => queue.Enqueue(TurnDirection.KATA)),
+			CreateButton(Vector3.right / 2 + Vector3.back * 4, "F", () => queue.Enqueue(null), 2f),
 		}.Select(b => b.Selectable).Concat(new[] { SubmitButton }).ToArray();
 		Selectable.UpdateChildren();
 		BombModule.OnActivate += Activate;
 	}
 
 	private void Update() {
-		if (activated) RenderWalls();
+		if (!activated) return;
+		if (anim < 1f) anim = Mathf.Min(1f, anim + Time.deltaTime * (1 + queue.Count));
+		else {
+			if (pos != toPos) Debug.LogFormat("[4D Maze #{0}] Moved to: {1}", moduleId, (toPos + Vector4Int.one).ToString());
+			pos = toPos;
+			r = toR;
+			u = toU;
+			a = toA;
+			f = toF;
+			RemoveWalls();
+			if (queue.Count > 0) {
+				TurnDirection? nextAction = queue.Dequeue();
+				if (nextAction == null) MoveForward();
+				else Turn(nextAction.Value);
+				AddWalls();
+			}
+		}
+		RenderWalls();
 	}
 
 	private void Activate() {
@@ -128,7 +164,7 @@ public class FourDimMazeModule : MonoBehaviour {
 		}
 		TargetText.text = (target + Vector4Int.one).ToString();
 		SubmitButton.OnInteract += () => { Submit(); return false; };
-		RenderWalls();
+		AddWalls();
 		activated = true;
 	}
 
@@ -139,16 +175,16 @@ public class FourDimMazeModule : MonoBehaviour {
 		} else BombModule.HandleStrike();
 	}
 
-	private void RenderWalls() {
-		HashSet<Vector4Int> positionsToRender = new HashSet<Vector4Int>(new[] { r, u, a }.SelectMany(d => new[] { pos + d, pos - d }));
-		if (walls[pos.AddMod(f, SIZE)] == null) positionsToRender = new HashSet<Vector4Int>(positionsToRender.SelectMany(p => new[] { p, p + f }));
-		positionsToRender.Add(pos + f);
-		foreach (Vector4Int idToRemove in hypercubes.Keys.Where((k) => !positionsToRender.Contains(k)).ToArray()) {
-			Destroy(hypercubes[idToRemove].gameObject);
-			hypercubes.Remove(idToRemove);
-		}
-		foreach (Vector4Int id in positionsToRender) {
-			if (hypercubes.ContainsKey(id)) continue;
+	private void AddWalls() {
+		foreach (Vector4Int id in GetPositionsToRender()) {
+			if (hypercubes.ContainsKey(id)) {
+				HyperCube oldHypercube = hypercubes[id];
+				bool wasDestroying = oldHypercube.destroy;
+				oldHypercube.destroy = false;
+				if (wasDestroying) oldHypercube.renderedCubes = new HashSet<Vector4Int>();
+				foreach (Vector4Int dir in DIRECTIONS) if (walls[id.AddMod(dir, SIZE)] == null) oldHypercube.renderedCubes.Add(dir);
+				continue;
+			}
 			Color? color = walls[id.AddMod(Vector4Int.zero, SIZE)];
 			if (color == null) continue;
 			HyperCube hypercube = Instantiate(HyperCubePrefab);
@@ -161,8 +197,46 @@ public class FourDimMazeModule : MonoBehaviour {
 			foreach (Vector4Int dir in DIRECTIONS) if (walls[id.AddMod(dir, SIZE)] == null) hypercube.renderedCubes.Add(dir);
 			hypercubes[id] = hypercube;
 		}
-		foreach (HyperCube hypercube in hypercubes.Values) {
-			hypercube.Render(ToVector4(pos), new FourDimRotation(ToVector4(r), ToVector4(u), ToVector4(f), ToVector4(a)));
+	}
+
+	private HashSet<Vector4Int> GetPositionsToRender() {
+		return new HashSet<Vector4Int>(GetPositionsToRender(pos, r, u, a, f).Concat(GetPositionsToRender(toPos, toR, toU, toA, toF)));
+	}
+
+	private HashSet<Vector4Int> GetPositionsToRender(Vector4Int pos, Vector4Int r, Vector4Int u, Vector4Int a, Vector4Int f) {
+		HashSet<Vector4Int> positionsToRender = new HashSet<Vector4Int>(new[] { r, u, a }.SelectMany(d => new[] { pos + d, pos - d }));
+		if (walls[pos.AddMod(f, SIZE)] == null) positionsToRender = new HashSet<Vector4Int>(positionsToRender.SelectMany(p => new[] { p, p + f }));
+		else positionsToRender.Add(pos + f);
+		Dictionary<Vector4Int, Vector4Int[]> perpendiculars = new Dictionary<Vector4Int, Vector4Int[]>{
+			{ r, new[] { u, a, f, -u, -a } },
+			{ u, new[] { r, a, f, -r, -a } },
+			{ a, new[] { r, u, f, -r, -u } },
+			{ -r, new[] { u, a, f, -u, -a } },
+			{ -u, new[] { r, a, f, -r, -a } },
+			{ -a, new[] { r, u, f, -r, -u } },
+		};
+		foreach (KeyValuePair<Vector4Int, Vector4Int[]> pair in perpendiculars) {
+			if (walls[pos.AddMod(pair.Key, SIZE)] == null) {
+				positionsToRender = new HashSet<Vector4Int>(positionsToRender.Concat(pair.Value.Select(p => pos + pair.Key + p)));
+			}
+		}
+		return positionsToRender;
+	}
+
+	private void RemoveWalls() {
+		HashSet<Vector4Int> positionsToRender = GetPositionsToRender();
+		foreach (Vector4Int idToRemove in hypercubes.Keys.Where((k) => !positionsToRender.Contains(k)).ToArray()) hypercubes[idToRemove].destroy = true;
+	}
+
+	private void RenderWalls() {
+		foreach (Vector4Int id in hypercubes.Keys.ToArray()) {
+			HyperCube hypercube = hypercubes[id];
+			if (hypercube.destroy && hypercube.distructionAnim <= 0f) {
+				Destroy(hypercube.gameObject);
+				hypercubes.Remove(id);
+				continue;
+			}
+			hypercube.Render(Lerp(pos, toPos, anim), new FourDimRotation(LerpNorm(r, toR, anim), LerpNorm(u, toU, anim), LerpNorm(f, toF, anim), LerpNorm(a, toA, anim)));
 		}
 	}
 
@@ -179,33 +253,35 @@ public class FourDimMazeModule : MonoBehaviour {
 	}
 
 	private void MoveForward() {
-		if (!activated || solved) return;
-		Vector4Int newPos = pos.AddMod(f, SIZE);
-		if (walls[newPos] != null) return;
-		pos = newPos;
-		RenderWalls();
+		Vector4Int newPos = pos + f;
+		if (walls[newPos.AddMod(Vector4Int.zero, SIZE)] != null) return;
+		toPos = newPos;
+		anim = 0;
 	}
 
 	private void Turn(TurnDirection dir) {
 		switch (dir) {
-			case TurnDirection.LEFT: Turn(ref r, f, ref f, -r); break;
-			case TurnDirection.RIGHT: Turn(ref r, -f, ref f, r); break;
-			case TurnDirection.UP: Turn(ref u, -f, ref f, u); break;
-			case TurnDirection.DOWN: Turn(ref u, f, ref f, -u); break;
-			case TurnDirection.ANA: Turn(ref a, -f, ref f, a); break;
-			case TurnDirection.KATA: Turn(ref a, f, ref f, -a); break;
+			case TurnDirection.LEFT: Turn(ref toR, f, ref toF, -r); break;
+			case TurnDirection.RIGHT: Turn(ref toR, -f, ref toF, r); break;
+			case TurnDirection.UP: Turn(ref toU, -f, ref toF, u); break;
+			case TurnDirection.DOWN: Turn(ref toU, f, ref toF, -u); break;
+			case TurnDirection.ANA: Turn(ref toA, -f, ref toF, a); break;
+			case TurnDirection.KATA: Turn(ref toA, f, ref toF, -a); break;
 			default: throw new NotImplementedException();
 		}
+		anim = 0;
 	}
 
 	private void Turn(ref Vector4Int a, Vector4Int newA, ref Vector4Int b, Vector4Int newB) {
-		if (!activated || solved) return;
 		a = newA;
 		b = newB;
-		RenderWalls();
 	}
 
-	private static Vector4 ToVector4(Vector4Int v) {
-		return new Vector4(v.x, v.y, v.z, v.w);
+	private static Vector4 Lerp(Vector4Int from, Vector4Int to, float anim) {
+		return (((Vector4)from) + (to - from) * anim);
+	}
+
+	private static Vector4 LerpNorm(Vector4Int from, Vector4Int to, float anim) {
+		return Lerp(from, to, anim).normalized;
 	}
 }
