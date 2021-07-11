@@ -54,6 +54,8 @@ public class FourDimMazeModule : MonoBehaviour {
 	public ButtonComponent ButtonPrefab;
 	public HyperCube HyperCubePrefab;
 
+	public bool TwitchShouldCancelCommand;
+
 	private bool advancedMode = true;
 	private bool activated = false;
 	private bool solved = false;
@@ -258,6 +260,10 @@ public class FourDimMazeModule : MonoBehaviour {
 		if (Regex.IsMatch(command, "^[rludakf]+$")) {
 			yield return null;
 			foreach (char c in command) {
+				if (TwitchShouldCancelCommand) {
+					yield return "cancelled";
+					break;
+				}
 				switch (c) {
 					case 'r': holdedTurnDirection = TurnDirection.RIGHT; break;
 					case 'l': holdedTurnDirection = TurnDirection.LEFT; break;
