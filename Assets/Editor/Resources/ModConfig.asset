@@ -17,7 +17,10 @@ MonoBehaviour:
   description: 'Navigate a 4D maze which the defuser sees in a first-person perspective.
 
 
-    Rule seed supported'
-  version: 0.1.0
+    Rule seed supported
+
+
+    Twitch Plays supported'
+  version: 1.0.0
   outputFolder: build
   previewImage: {fileID: 2800000, guid: 5c8c2b28274d9f54691d8c2c51f0e061, type: 3}

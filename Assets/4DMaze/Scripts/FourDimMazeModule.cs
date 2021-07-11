@@ -1,15 +1,23 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
 public class FourDimMazeModule : MonoBehaviour {
+	public const float CONTAINER_ANGLE = 8f;
+	public const float MAX_CONTAINER_ROTATION_SPEED = 1f;
+	public const float MAX_CONTAINER_ACCELERATION = 1f;
+	public const float MAX_CONTAINER_ACCELERATION_SPEED = 1f;
 	public const int MAX_TARGET_DISTANCE = 8;
 	public const float CUBE_OFFSET = 0.04f;
 	public const float BUTTONS_OFFSET = 0.02f;
 	public static readonly Vector4Int SIZE = new Vector4Int(5, 5, 5, 5);
 	public static Color[] COLORS { get { return new[] { Color.red, Color.green, Color.blue, Color.magenta, Color.yellow, Color.cyan }; } }
+
+	public readonly string TwitchHelpMessage = "\"{0} rludakf\" - rotate/move | \"{0} mode\" - toggle render mode | \"{0} submit\" - press submit";
 
 	public static Vector4Int[] AXIS {
 		get { return new[] { new Vector4Int(1, 0, 0, 0), new Vector4Int(0, 1, 0, 0), new Vector4Int(0, 0, 1, 0), new Vector4Int(0, 0, 0, 1) }; }
@@ -28,6 +36,9 @@ public class FourDimMazeModule : MonoBehaviour {
 	};
 
 	public enum TurnDirection { RIGHT, LEFT, UP, DOWN, ANA, KATA };
+	private readonly TurnDirection[] AllTurnDirections = new[] {
+		TurnDirection.RIGHT, TurnDirection.LEFT, TurnDirection.UP, TurnDirection.DOWN, TurnDirection.ANA, TurnDirection.KATA
+	};
 
 	private static int moduleIdCounter = 1;
 
@@ -38,6 +49,7 @@ public class FourDimMazeModule : MonoBehaviour {
 	public KMSelectable Selectable;
 	public KMSelectable SubmitButton;
 	public KMBombModule BombModule;
+	public KMAudio Audio;
 	public ModeTogglerComponent ModeToggleButton;
 	public ButtonComponent ButtonPrefab;
 	public HyperCube HyperCubePrefab;
@@ -58,9 +70,14 @@ public class FourDimMazeModule : MonoBehaviour {
 	private Vector4Int toU;
 	private Vector4Int toA;
 	private Vector4Int target;
+	private TurnDirection? holdedTurnDirection = null;
+	private bool forwardHolded = false;
+	private bool solvingAnimationActive = true;
+	private float containerRotation;
+	private float containerRotationSpeed;
+	private float containerRotationAcceleration;
 	private FourDimArray<Color?> walls;
 	private Dictionary<Vector4Int, HyperCube> hypercubes = new Dictionary<Vector4Int, HyperCube>();
-	private Queue<TurnDirection?> queue = new Queue<TurnDirection?>();
 
 	private void Start() {
 		moduleId = moduleIdCounter++;
@@ -112,35 +129,50 @@ public class FourDimMazeModule : MonoBehaviour {
 			f = toF;
 		}
 		anim = 1f;
-		Debug.LogFormat("[4D Maze #{0}] Initial orientation: {1}", moduleId, "(" + new[]{ r, u, a, f }.Select(a => DIRECTIONS_NAMES[a]).Join(";") + ")");
+		Debug.LogFormat(
+			"[4D Maze #{0}] Initial orientation: (R:{1}; U:{2}; A:{3}; K:{4})",
+			moduleId, DIRECTIONS_NAMES[r], DIRECTIONS_NAMES[u], DIRECTIONS_NAMES[a], DIRECTIONS_NAMES[f]
+		);
 		Selectable.Children = new[] {
-			CreateButton(Vector3.zero, "L", () => queue.Enqueue(TurnDirection.LEFT)),
-			CreateButton(Vector3.right, "R", () => queue.Enqueue(TurnDirection.RIGHT)),
-			CreateButton(Vector3.back, "U", () => queue.Enqueue(TurnDirection.UP)),
-			CreateButton(Vector3.back * 2, "D", () => queue.Enqueue(TurnDirection.DOWN)),
-			CreateButton(Vector3.back + Vector3.right, "A", () => queue.Enqueue(TurnDirection.ANA)),
-			CreateButton(Vector3.back * 2 + Vector3.right, "K", () => queue.Enqueue(TurnDirection.KATA)),
-			CreateButton(Vector3.right / 2 + Vector3.back * 4, "F", () => queue.Enqueue(null), 2f),
+			CreateButton(Vector3.zero, "L", () => holdedTurnDirection = TurnDirection.LEFT),
+			CreateButton(Vector3.right, "R", () => holdedTurnDirection = TurnDirection.RIGHT),
+			CreateButton(Vector3.back, "U", () => holdedTurnDirection = TurnDirection.UP),
+			CreateButton(Vector3.back * 2, "D", () => holdedTurnDirection = TurnDirection.DOWN),
+			CreateButton(Vector3.back + Vector3.right, "A", () => holdedTurnDirection = TurnDirection.ANA),
+			CreateButton(Vector3.back * 2 + Vector3.right, "K", () => holdedTurnDirection = TurnDirection.KATA),
+			CreateButton(Vector3.right / 2 + Vector3.back * 4, "F", () => forwardHolded = true),
 		}.Select(b => b.Selectable).Concat(new[] { SubmitButton, ModeToggleButton.Selectable }).ToArray();
 		Selectable.UpdateChildren();
+		containerRotation = Random.Range(0, 2f * Mathf.PI);
+		containerRotationSpeed = Random.Range(-MAX_CONTAINER_ROTATION_SPEED, MAX_CONTAINER_ROTATION_SPEED);
+		containerRotationAcceleration = Random.Range(-MAX_CONTAINER_ACCELERATION, MAX_CONTAINER_ACCELERATION);
 		BombModule.OnActivate += Activate;
 	}
 
 	private void Update() {
+		containerRotationAcceleration += Random.Range(-Time.deltaTime * MAX_CONTAINER_ACCELERATION_SPEED, Time.deltaTime * MAX_CONTAINER_ACCELERATION_SPEED);
+		containerRotationAcceleration = Mathf.Min(MAX_CONTAINER_ACCELERATION, Mathf.Max(-MAX_CONTAINER_ACCELERATION, containerRotationAcceleration));
+		containerRotationSpeed += containerRotationAcceleration * Time.deltaTime;
+		containerRotationSpeed = Mathf.Min(MAX_CONTAINER_ROTATION_SPEED, Mathf.Max(-MAX_CONTAINER_ROTATION_SPEED, containerRotationSpeed));
+		containerRotation += containerRotationSpeed * Time.deltaTime;
+		ViewContainer.transform.localRotation = Quaternion.FromToRotation(CONTAINER_ANGLE * Vector3.forward, new Vector3(Mathf.Cos(containerRotation), Mathf.Sin(containerRotation), CONTAINER_ANGLE));
 		if (!activated) return;
-		if (anim < 1f) anim = Mathf.Min(1f, anim + Time.deltaTime * (1 + queue.Count));
+		if (anim < 1f) anim = Mathf.Min(1f, anim + Time.deltaTime);
 		else {
-			if (pos != toPos) Debug.LogFormat("[4D Maze #{0}] Moved to: {1}", moduleId, (toPos.AddMod(Vector4Int.zero, SIZE) + Vector4Int.one).ToString());
+			if (!solved && pos != toPos) Debug.LogFormat("[4D Maze #{0}] Moved to: {1}", moduleId, (toPos.AddMod(Vector4Int.zero, SIZE) + Vector4Int.one).ToString());
 			pos = toPos;
 			r = toR;
 			u = toU;
 			a = toA;
 			f = toF;
 			RemoveWalls();
-			if (queue.Count > 0) {
-				TurnDirection? nextAction = queue.Dequeue();
-				if (nextAction == null) MoveForward();
-				else Turn(nextAction.Value);
+			if (holdedTurnDirection != null) {
+				if (!solved) Audio.PlayGameSoundAtTransform(KMSoundOverride.SoundEffect.ButtonPress, transform);
+				Turn(holdedTurnDirection.Value);
+				AddWalls();
+			} else if (forwardHolded) {
+				if (!solved) Audio.PlayGameSoundAtTransform(KMSoundOverride.SoundEffect.ButtonPress, transform);
+				MoveForward();
 				AddWalls();
 			}
 		}
@@ -178,23 +210,71 @@ public class FourDimMazeModule : MonoBehaviour {
 		TargetText.text = (target + Vector4Int.one).ToString();
 		Debug.LogFormat("[4D Maze #{0}] Target position: {1}", moduleId, (target + Vector4Int.one).ToString());
 		SubmitButton.OnInteract += () => { Submit(); return false; };
-		ModeToggleButton.Selectable.OnInteract += () => {
-			advancedMode = !advancedMode;
-			ModeToggleButton.advanced = advancedMode;
-			if (advancedMode) AddWalls();
-			else RemoveWalls();
-			RenderWalls();
-			return false;
-		};
+		ModeToggleButton.Selectable.OnInteract += () => { ToggleRenderMode(); return false; };
 		AddWalls();
 		activated = true;
 	}
 
+	private void ToggleRenderMode() {
+		advancedMode = !advancedMode;
+		ModeToggleButton.advanced = advancedMode;
+		if (advancedMode) AddWalls();
+		else RemoveWalls();
+		RenderWalls();
+	}
+
 	private void Submit() {
-		if (pos.AddMod(Vector4Int.zero, SIZE) == target) {
+		if (solved) {
+			solvingAnimationActive = !solvingAnimationActive;
+			return;
+		}
+		if (!activated) return;
+		Vector4Int posToCheck = anim < .5f ? pos : toPos;
+		if (posToCheck.AddMod(Vector4Int.zero, SIZE) == target) {
+			Debug.LogFormat("[4D Maze #{0}] Submit pressed on valid coordinates. Module solved!", moduleId);
 			solved = true;
+			Audio.PlayGameSoundAtTransform(KMSoundOverride.SoundEffect.CorrectChime, transform);
 			BombModule.HandlePass();
-		} else BombModule.HandleStrike();
+			if (!advancedMode) ToggleRenderMode();
+			StartCoroutine(AfterSolvingAnimation());
+		} else {
+			Debug.LogFormat("[4D Maze #{0}] Submit pressed on coordinates {1}. Strike!", moduleId, (posToCheck + Vector4Int.one).ToString());
+			BombModule.HandleStrike();
+		}
+	}
+
+	public IEnumerator ProcessTwitchCommand(string command) {
+		command = command.Trim().ToLower();
+		if (command == "submit") {
+			yield return null;
+			yield return new[] { SubmitButton };
+			yield break;
+		}
+		if (command == "mode") {
+			yield return null;
+			yield return new[] { ModeToggleButton.Selectable };
+			yield break;
+		}
+		if (Regex.IsMatch(command, "^[rludakf]+$")) {
+			yield return null;
+			foreach (char c in command) {
+				switch (c) {
+					case 'r': holdedTurnDirection = TurnDirection.RIGHT; break;
+					case 'l': holdedTurnDirection = TurnDirection.LEFT; break;
+					case 'u': holdedTurnDirection = TurnDirection.UP; break;
+					case 'd': holdedTurnDirection = TurnDirection.DOWN; break;
+					case 'a': holdedTurnDirection = TurnDirection.ANA; break;
+					case 'k': holdedTurnDirection = TurnDirection.KATA; break;
+					case 'f': forwardHolded = true; break;
+					default: throw new NotImplementedException();
+				}
+				yield return null;
+				holdedTurnDirection = null;
+				forwardHolded = false;
+				while (!Idle()) yield return null;
+			}
+			yield break;
+		}
 	}
 
 	private void AddWalls() {
@@ -275,8 +355,31 @@ public class FourDimMazeModule : MonoBehaviour {
 		button.transform.localRotation = Quaternion.identity;
 		button.Selectable.Parent = Selectable;
 		button.text = label;
-		if (action != null) button.Selectable.OnInteract += () => { action(); return false; };
+		if (action != null) button.Selectable.OnInteract += () => { if (!solved || !solvingAnimationActive) action(); return false; };
+		button.Selectable.OnInteractEnded += () => { if (solved && solvingAnimationActive) return; holdedTurnDirection = null; forwardHolded = false; };
 		return button;
+	}
+
+	private IEnumerator AfterSolvingAnimation() {
+		while (true) {
+			if (!solvingAnimationActive) {
+				yield return null;
+				continue;
+			}
+			TurnDirection[] possibleTurnDirections = AllTurnDirections.Where(td => walls[pos.AddMod(TurnDirectionToDirection(td), SIZE)] == null).ToArray();
+			bool wallOnFront = walls[pos.AddMod(f, SIZE)] != null;
+			if (wallOnFront || (possibleTurnDirections.Length > 0 && Random.Range(0, 4) == 0)) {
+				holdedTurnDirection = possibleTurnDirections.Length == 0 ? AllTurnDirections.PickRandom() : possibleTurnDirections.PickRandom();
+				yield return null;
+				holdedTurnDirection = null;
+				while (!Idle()) yield return null;
+			}
+			if (!solvingAnimationActive) continue;
+			forwardHolded = true;
+			yield return null;
+			forwardHolded = false;
+			while (!Idle()) yield return null;
+		}
 	}
 
 	private void MoveForward() {
@@ -304,11 +407,75 @@ public class FourDimMazeModule : MonoBehaviour {
 		b = newB;
 	}
 
+	private Vector4Int TurnDirectionToDirection(TurnDirection dir) {
+		switch (dir) {
+			case TurnDirection.LEFT: return -r;
+			case TurnDirection.RIGHT: return r;
+			case TurnDirection.UP: return u;
+			case TurnDirection.DOWN: return -u;
+			case TurnDirection.ANA: return a;
+			case TurnDirection.KATA: return -a;
+			default: throw new NotImplementedException();
+		}
+	}
+
+	private IEnumerator TwitchHandleForcedSolve() {
+		yield return null;
+		while (!Idle()) yield return null;
+		List<Vector4Int> way = FindSolution();
+		foreach (Vector4Int adj in way) {
+			forwardHolded = false;
+			holdedTurnDirection = null;
+			if (pos.AddMod(f, SIZE) != adj) {
+				TurnDirection[] possibleDirections = AllTurnDirections.Where(td => pos.AddMod(TurnDirectionToDirection(td), SIZE) == adj).ToArray();
+				if (possibleDirections.Length == 0) {
+					TurnDirection d = AllTurnDirections.PickRandom();
+					holdedTurnDirection = d;
+					yield return null;
+					holdedTurnDirection = null;
+					while (!Idle()) yield return null;
+					holdedTurnDirection = d;
+				} else holdedTurnDirection = possibleDirections.PickRandom();
+				yield return null;
+				holdedTurnDirection = null;
+				while (!Idle()) yield return null;
+			}
+			forwardHolded = true;
+			yield return null;
+			forwardHolded = false;
+			while (!Idle()) yield return null;
+		}
+		Submit();
+	}
+
+	private List<Vector4Int> FindSolution() {
+		FourDimArray<List<Vector4Int>> temp = new FourDimArray<List<Vector4Int>>(SIZE, null);
+		temp[toPos] = new List<Vector4Int>();
+		Queue<Vector4Int> q = new Queue<Vector4Int>();
+		q.Enqueue(toPos);
+		while (temp[target] == null) {
+			Vector4Int p = q.Dequeue();
+			foreach (Vector4Int d in DIRECTIONS) {
+				Vector4Int adjPos = p.AddMod(d, SIZE);
+				if (walls[adjPos] != null) continue;
+				if (temp[adjPos] != null) continue;
+				temp[adjPos] = new List<Vector4Int>(temp[p]);
+				temp[adjPos].Add(adjPos);
+				q.Enqueue(adjPos);
+			}
+		}
+		return temp[target];
+	}
+
 	private static Vector4 Lerp(Vector4Int from, Vector4Int to, float anim) {
 		return (((Vector4)from) + (to - from) * anim);
 	}
 
 	private static Vector4 LerpNorm(Vector4Int from, Vector4Int to, float anim) {
 		return Lerp(from, to, anim).normalized;
+	}
+
+	private bool Idle() {
+		return anim >= 1f && pos == toPos && r == toR && u == toU && a == toA && f == toF;
 	}
 }
