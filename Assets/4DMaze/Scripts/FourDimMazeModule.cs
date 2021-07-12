@@ -78,6 +78,7 @@ public class FourDimMazeModule : MonoBehaviour {
 	private float containerRotation;
 	private float containerRotationSpeed;
 	private float containerRotationAcceleration;
+	private bool solvingAnimationForcedForward = false;
 	private FourDimArray<Color?> walls;
 	private Dictionary<Vector4Int, HyperCube> hypercubes = new Dictionary<Vector4Int, HyperCube>();
 
@@ -132,7 +133,7 @@ public class FourDimMazeModule : MonoBehaviour {
 		}
 		anim = 1f;
 		Debug.LogFormat(
-			"[4D Maze #{0}] Initial orientation: (R:{1}; U:{2}; A:{3}; K:{4})",
+			"[4D Maze #{0}] Initial orientation: (R:{1}; U:{2}; A:{3}; F:{4})",
 			moduleId, DIRECTIONS_NAMES[r], DIRECTIONS_NAMES[u], DIRECTIONS_NAMES[a], DIRECTIONS_NAMES[f]
 		);
 		Selectable.Children = new[] {
@@ -168,6 +169,23 @@ public class FourDimMazeModule : MonoBehaviour {
 			a = toA;
 			f = toF;
 			RemoveWalls();
+			if (solved && solvingAnimationActive) {
+				forwardHolded = false;
+				holdedTurnDirection = null;
+				if (solvingAnimationForcedForward) {
+					forwardHolded = true;
+					solvingAnimationForcedForward = false;
+				} else {
+					TurnDirection[] possibleTurnDirections = AllTurnDirections.Where(td => walls[pos.AddMod(TurnDirectionToDirection(td), SIZE)] == null).ToArray();
+					bool wallOnFront = walls[pos.AddMod(f, SIZE)] != null;
+					if (wallOnFront || (possibleTurnDirections.Length > 0 && Random.Range(0, 4) == 0)) {
+						holdedTurnDirection = possibleTurnDirections.Length == 0 ? AllTurnDirections.PickRandom() : possibleTurnDirections.PickRandom();
+						solvingAnimationForcedForward = true;
+					} else {
+						forwardHolded = true;
+					}
+				}
+			}
 			if (holdedTurnDirection != null) {
 				if (!solved) Audio.PlayGameSoundAtTransform(KMSoundOverride.SoundEffect.ButtonPress, transform);
 				Turn(holdedTurnDirection.Value);
@@ -176,6 +194,10 @@ public class FourDimMazeModule : MonoBehaviour {
 				if (!solved) Audio.PlayGameSoundAtTransform(KMSoundOverride.SoundEffect.ButtonPress, transform);
 				MoveForward();
 				AddWalls();
+			}
+			if (solved && solvingAnimationActive) {
+				forwardHolded = false;
+				holdedTurnDirection = null;
 			}
 		}
 		RenderWalls();
@@ -238,7 +260,6 @@ public class FourDimMazeModule : MonoBehaviour {
 			Audio.PlayGameSoundAtTransform(KMSoundOverride.SoundEffect.CorrectChime, transform);
 			BombModule.HandlePass();
 			if (!advancedMode) ToggleRenderMode();
-			StartCoroutine(AfterSolvingAnimation());
 		} else {
 			Debug.LogFormat("[4D Maze #{0}] Submit pressed on coordinates {1}. Strike!", moduleId, (posToCheck + Vector4Int.one).ToString());
 			BombModule.HandleStrike();
@@ -364,28 +385,6 @@ public class FourDimMazeModule : MonoBehaviour {
 		if (action != null) button.Selectable.OnInteract += () => { if (!solved || !solvingAnimationActive) action(); return false; };
 		button.Selectable.OnInteractEnded += () => { if (solved && solvingAnimationActive) return; holdedTurnDirection = null; forwardHolded = false; };
 		return button;
-	}
-
-	private IEnumerator AfterSolvingAnimation() {
-		while (true) {
-			if (!solvingAnimationActive) {
-				yield return null;
-				continue;
-			}
-			TurnDirection[] possibleTurnDirections = AllTurnDirections.Where(td => walls[pos.AddMod(TurnDirectionToDirection(td), SIZE)] == null).ToArray();
-			bool wallOnFront = walls[pos.AddMod(f, SIZE)] != null;
-			if (wallOnFront || (possibleTurnDirections.Length > 0 && Random.Range(0, 4) == 0)) {
-				holdedTurnDirection = possibleTurnDirections.Length == 0 ? AllTurnDirections.PickRandom() : possibleTurnDirections.PickRandom();
-				yield return null;
-				holdedTurnDirection = null;
-				while (!Idle()) yield return null;
-			}
-			if (!solvingAnimationActive) continue;
-			forwardHolded = true;
-			yield return null;
-			forwardHolded = false;
-			while (!Idle()) yield return null;
-		}
 	}
 
 	private void MoveForward() {
